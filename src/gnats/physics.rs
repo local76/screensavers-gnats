@@ -51,11 +51,12 @@ pub fn compute_firefly_forces_and_update(
             let dx = attr.x - fireflies[i].x;
             let dy = attr.y - fireflies[i].y;
             let dist_sq = dx * dx + dy * dy;
-            let dist = dist_sq.sqrt().max(0.1);
+            let inv_dist = 1.0 / dist_sq.sqrt().max(0.1);
             
             let pull = 45.0 / (dist_sq + 20.0);
-            fx += (dx / dist) * pull;
-            fy += (dy / dist) * pull;
+            let pull_over_d = pull * inv_dist;
+            fx += dx * pull_over_d;
+            fy += dy * pull_over_d;
         }
 
         // Faint pull towards screen center
@@ -64,10 +65,11 @@ pub fn compute_firefly_forces_and_update(
         let dx = cx - fireflies[i].x;
         let dy = cy - fireflies[i].y;
         let dist_sq = dx * dx + dy * dy;
-        let dist = dist_sq.sqrt().max(0.1);
+        let inv_dist = 1.0 / dist_sq.sqrt().max(0.1);
         let center_pull = 15.0 / (dist_sq + 60.0);
-        fx += (dx / dist) * center_pull;
-        fy += (dy / dist) * center_pull;
+        let f_over_d = center_pull * inv_dist;
+        fx += dx * f_over_d;
+        fy += dy * f_over_d;
 
         // Flow wind fields
         let wind_x = (time_elapsed * 0.35 + fireflies[i].y * 0.08).cos() * 0.35;
@@ -118,8 +120,9 @@ pub fn compute_firefly_forces_and_update(
         // Apply chase force
         if closest_prey_dist < f32::MAX {
             let force_chase = 55.0 / (closest_prey_dist + 4.5);
-            fx += (prey_dx / closest_prey_dist) * force_chase;
-            fy += (prey_dy / closest_prey_dist) * force_chase;
+            let force_chase_over_d = force_chase / closest_prey_dist;
+            fx += prey_dx * force_chase_over_d;
+            fy += prey_dy * force_chase_over_d;
 
             // Mark prey for death if close enough
             if closest_prey_dist < 1.1 {
@@ -132,8 +135,9 @@ pub fn compute_firefly_forces_and_update(
         // Apply flee force
         if closest_predator_dist < f32::MAX {
             let force_flee = 75.0 / (closest_predator_dist + 2.5);
-            fx -= (pred_dx / closest_predator_dist) * force_flee;
-            fy -= (pred_dy / closest_predator_dist) * force_flee;
+            let force_flee_over_d = force_flee / closest_predator_dist;
+            fx -= pred_dx * force_flee_over_d;
+            fy -= pred_dy * force_flee_over_d;
         }
 
         *force = (fx, fy);
@@ -146,11 +150,14 @@ pub fn compute_firefly_forces_and_update(
         p.vx *= 1.0 - (delta * 1.8);
         p.vy *= 1.0 - (delta * 1.8);
 
-        let speed = (p.vx * p.vx + p.vy * p.vy).sqrt();
+        let speed_sq = p.vx * p.vx + p.vy * p.vy;
         let max_speed = 36.0;
-        if speed > max_speed {
-            p.vx = (p.vx / speed) * max_speed;
-            p.vy = (p.vy / speed) * max_speed;
+        let max_speed_sq = max_speed * max_speed;
+        if speed_sq > max_speed_sq {
+            let inv_speed = 1.0 / speed_sq.sqrt().max(1e-6);
+            let factor = inv_speed * max_speed;
+            p.vx *= factor;
+            p.vy *= factor;
         }
 
         p.x += p.vx * delta;

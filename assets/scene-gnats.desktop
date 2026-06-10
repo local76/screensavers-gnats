@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=gnats - retro terminal screensaver effect
+Comment=Screensaver effect: gnats
+Exec=gnats
+Icon=gnats
+Terminal=false
+Categories=Screensaver;

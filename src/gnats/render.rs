@@ -1,7 +1,7 @@
-use library::core::TerminalCell;
+﻿use library::core::TerminalCell;
 use library::toolkit::sys_info::query_current_palette;
 use library::core::logo_block::render_logo_block;
-use library::platform::native::sys_info::get_system_info;
+use library::toolkit::sys_info::get_system_info;
 use super::Gnats;
 
 pub fn draw_gnats(gnats: &Gnats, grid: &mut [TerminalCell], cols: usize, rows: usize) {

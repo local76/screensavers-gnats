@@ -3,10 +3,9 @@
     windows_subsystem = "windows"
 )]
 
-mod runner;
 mod gnats;
 
 fn main() {
     let effect = gnats::Gnats::new();
-    runner::run_main(effect, "gnats");
+    library::screensaver_runner::run_main(effect, "gnats");
 }

@@ -12,8 +12,6 @@ use library::core::{LcgRng, TerminalCell, hsl_to_rgb, rgb_to_hsl};
 use std::time::Duration;
 use library::core::screensaver::Screensaver;
 use library::toolkit::sys_info::query_current_palette;
-use library::toolkit::rgb_controller::{RgbController, is_openrgb_enabled};
-use library::toolkit::rgb_protocol::RgbColor;
 
 pub struct Gnats {
     rng: LcgRng,
@@ -24,10 +22,7 @@ pub struct Gnats {
     pub(crate) time_elapsed: f32,
     last_cols: usize,
     last_rows: usize,
-    pub(crate) logo_excitation: Vec<f32>,
-    rgb: Option<RgbController>,
-    rgb_timer: f32,
-}
+    pub(crate) logo_excitation: Vec<f32>,}
 
 impl Default for Gnats {
     fn default() -> Self {
@@ -48,8 +43,6 @@ impl Gnats {
             last_cols: 0,
             last_rows: 0,
             logo_excitation: Vec::new(),
-            rgb: if is_openrgb_enabled() { Some(RgbController::new()) } else { None },
-            rgb_timer: 0.0,
         }
     }
 
@@ -98,37 +91,7 @@ impl Screensaver for Gnats {
         self.time_elapsed += delta;
 
         // OpenRGB drift updates
-        self.rgb_timer += delta;
-        if self.rgb_timer >= 0.15 {
-            self.rgb_timer = 0.0;
-            if let Some(ref r) = self.rgb {
-                if self.fireflies.len() >= 4 {
-                    // 5: Keyboard
-                    let c0 = self.fireflies[0].color;
-                    r.set_device_color(5, RgbColor::new(c0.0, c0.1, c0.2));
-
-                    // 6: Mouse
-                    let c1 = self.fireflies[1].color;
-                    r.set_device_color(6, RgbColor::new(c1.0, c1.1, c1.2));
-
-                    // 12: Speaker
-                    let c2 = self.fireflies[2].color;
-                    r.set_device_color(12, RgbColor::new(c2.0, c2.1, c2.2));
-
-                    // 0, 1, 2: Motherboard, RAM, GPU
-                    let c3 = self.fireflies[3].color;
-                    let m_color = RgbColor::new(c3.0, c3.1, c3.2);
-                    r.set_device_color(0, m_color);
-                    r.set_device_color(1, m_color);
-                    r.set_device_color(2, m_color);
-                } else if !self.fireflies.is_empty() {
-                    let c0 = self.fireflies[0].color;
-                    r.set_color(RgbColor::new(c0.0, c0.1, c0.2));
-                }
-            }
-        }
-
-        // Initialize particles and attractors if grid size changes
+// Initialize particles and attractors if grid size changes
         if cols != self.last_cols || rows != self.last_rows {
             self.last_cols = cols;
             self.last_rows = rows;

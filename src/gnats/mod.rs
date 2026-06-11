@@ -11,7 +11,7 @@ pub use types::{Firefly, Attractor, Star, KillSpark};
 use library::core::{LcgRng, TerminalCell, hsl_to_rgb, rgb_to_hsl};
 use std::time::Duration;
 use library::core::screensaver::Screensaver;
-use library::toolkit::sys_info::query_current_palette;
+use library::toolkit::sys_info::{query_current_palette, get_system_info};
 
 pub struct Gnats {
     rng: LcgRng,
@@ -22,7 +22,15 @@ pub struct Gnats {
     pub(crate) time_elapsed: f32,
     last_cols: usize,
     last_rows: usize,
-    pub(crate) logo_excitation: Vec<f32>,}
+    pub(crate) logo_excitation: Vec<f32>,
+    pub(super) on_battery: bool,
+    pub(super) frame_time_ema: f32,
+    pub(super) quality_scale: f32,
+    pub(super) target_frame_time: f32,
+    sys_refresh_timer: f32,
+    mem_pressure: f32,
+    cpu_load: f32,
+}
 
 impl Default for Gnats {
     fn default() -> Self {
@@ -33,6 +41,8 @@ impl Default for Gnats {
 impl Gnats {
     pub fn new() -> Self {
         let rng = LcgRng::new(1357);
+        let sys = get_system_info();
+        let on_battery = sys.power_status.contains("Battery");
         Self {
             rng,
             fireflies: Vec::new(),
@@ -43,6 +53,13 @@ impl Gnats {
             last_cols: 0,
             last_rows: 0,
             logo_excitation: Vec::new(),
+            on_battery,
+            frame_time_ema: 0.01666667,
+            quality_scale: 1.0,
+            target_frame_time: 0.01666667,
+            sys_refresh_timer: 0.0,
+            mem_pressure: sys.mem_used_pct / 100.0,
+            cpu_load: (sys.cpu_usage_pct / 100.0).clamp(0.0, 1.0),
         }
     }
 
@@ -87,11 +104,41 @@ impl Gnats {
 
 impl Screensaver for Gnats {
     fn update(&mut self, dt: Duration, cols: usize, rows: usize) {
-        let delta = dt.as_secs_f32().min(0.1);
+        let dt_secs = dt.as_secs_f32().min(0.1);
+
+        // Auto-detect high refresh rates during the startup phase
+        if self.time_elapsed < 2.0 && dt_secs > 0.001 {
+            if dt_secs < self.target_frame_time - 0.001 {
+                self.target_frame_time = dt_secs;
+            }
+        }
+
+        // Exponential moving average for frame time (alpha = 0.1)
+        self.frame_time_ema = self.frame_time_ema * 0.9 + dt_secs.min(0.2) * 0.1;
+
+        let speed_mult = if self.on_battery { 0.65 } else { 1.0 };
+        let delta = dt_secs * speed_mult;
         self.time_elapsed += delta;
 
-        // OpenRGB drift updates
-// Initialize particles and attractors if grid size changes
+        // Adjust quality_scale based on frame time performance vs target
+        if self.time_elapsed > 1.5 {
+            if self.frame_time_ema > self.target_frame_time * 1.15 {
+                self.quality_scale = (self.quality_scale - 0.15 * delta).max(0.20);
+            } else if self.frame_time_ema < self.target_frame_time * 1.05 {
+                self.quality_scale = (self.quality_scale + 0.04 * delta).min(1.0);
+            }
+        }
+
+        self.sys_refresh_timer += delta;
+        if self.sys_refresh_timer >= 1.0 {
+            let sys = get_system_info();
+            self.mem_pressure = sys.mem_used_pct / 100.0;
+            self.cpu_load = (sys.cpu_usage_pct / 100.0).clamp(0.0, 1.0);
+            self.on_battery = sys.power_status.contains("Battery");
+            self.sys_refresh_timer = 0.0;
+        }
+
+        // Initialize particles and attractors if grid size changes
         if cols != self.last_cols || rows != self.last_rows {
             self.last_cols = cols;
             self.last_rows = rows;
@@ -100,57 +147,10 @@ impl Screensaver for Gnats {
             // `trance_core::logo_dimensions()` was a Windows file read).
             self.logo_excitation = vec![0.0; 80 * 12];
 
-            // library 4.0: pull from the canonical ScreenPalette.
-            let accent = query_current_palette().accent;
-            let (acc_h, _acc_s, _acc_l) = rgb_to_hsl(accent.0, accent.1, accent.2);
-
-            // Recreate fireflies
-            self.fireflies.clear();
-            self.kill_sparks.clear();
-            let num_fireflies = ((cols * rows) / 45).clamp(30, 60);
-            for _ in 0..num_fireflies {
-                let size = self.rng.next_range(0.0, 4.0) as u8;
-                let speed_mult = self.rng.next_range(0.7, 1.3);
-
-                // Select a harmonious neon color using triadic accent color schemes
-                let p = self.rng.next_f32();
-                let h = if p < 0.4 {
-                    (acc_h + self.rng.next_range(-15.0, 15.0)).rem_euclid(360.0)
-                } else if p < 0.7 {
-                    (acc_h + 120.0 + self.rng.next_range(-15.0, 15.0)).rem_euclid(360.0)
-                } else {
-                    (acc_h - 120.0 + self.rng.next_range(-15.0, 15.0)).rem_euclid(360.0)
-                };
-                let color = hsl_to_rgb(h, 0.95, 0.60);
-
-                self.fireflies.push(Firefly {
-                    x: self.rng.next_range(0.0, cols as f32),
-                    y: self.rng.next_range(0.0, rows as f32),
-                    vx: self.rng.next_range(-5.0, 5.0),
-                    vy: self.rng.next_range(-5.0, 5.0),
-                    color,
-                    size,
-                    speed_mult,
-                    history: Vec::new(),
-                });
-            }
-
-            // Recreate stars
-            self.stars.clear();
-            let target_stars = ((cols * rows) / 25).clamp(30, 120);
-            for i in 0..target_stars {
-                let ch = if i % 8 == 0 { '✦' } else if i % 3 == 0 { '+' } else { '.' };
-                self.stars.push(Star {
-                    x: self.rng.next_f32(),
-                    y: self.rng.next_f32(),
-                    phase: self.rng.next_f32() * std::f32::consts::TAU,
-                    ch,
-                    excitation: 0.0,
-                });
-            }
-
             // Recreate attractors
             self.attractors.clear();
+            let accent = query_current_palette().accent;
+            let (acc_h, _acc_s, _acc_l) = rgb_to_hsl(accent.0, accent.1, accent.2);
             self.attractors.push(Attractor {
                 x: cols as f32 / 2.0,
                 y: rows as f32 / 2.0,
@@ -172,6 +172,37 @@ impl Screensaver for Gnats {
                 phase: 4.0,
                 speed: 0.75,
             });
+
+            self.fireflies.clear();
+            self.stars.clear();
+            self.kill_sparks.clear();
+        }
+
+        // Dynamically adjust fireflies to match target capacity
+        let num_fireflies = (((cols * rows) / 45).clamp(30, 60) as f32 * self.quality_scale * (if self.on_battery { 0.55 } else { 1.0 })) as usize;
+        if self.fireflies.len() > num_fireflies {
+            self.fireflies.truncate(num_fireflies);
+        } else if self.fireflies.len() < num_fireflies && num_fireflies > 0 {
+            while self.fireflies.len() < num_fireflies {
+                self.spawn_new_firefly(cols, rows);
+            }
+        }
+
+        // Dynamically adjust star population to match target capacity
+        let target_stars = (((cols * rows) / 25).clamp(30, 120) as f32 * self.quality_scale * (if self.on_battery { 0.55 } else { 1.0 })) as usize;
+        if self.stars.len() > target_stars {
+            self.stars.truncate(target_stars);
+        } else if self.stars.len() < target_stars && target_stars > 0 {
+            while self.stars.len() < target_stars {
+                let ch = if self.stars.len() % 8 == 0 { '✦' } else if self.stars.len() % 3 == 0 { '+' } else { '.' };
+                self.stars.push(Star {
+                    x: self.rng.next_f32(),
+                    y: self.rng.next_f32(),
+                    phase: self.rng.next_f32() * std::f32::consts::TAU,
+                    ch,
+                    excitation: 0.0,
+                });
+            }
         }
 
         let cols_f = cols as f32;

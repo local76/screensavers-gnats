@@ -31,9 +31,10 @@ depends = "libc6, xterm"
 section = "utils"
 priority = "optional"
 assets = [
-    ["target/release/gnats", "usr/libexec/screensaver-shims/gnats", "755"],
-    ["assets/scene-gnats.desktop", "usr/share/applications/scene-gnats.desktop", "644"],
-    ["assets/scene-gnats.xml", "usr/share/xscreensaver/config/scene-gnats.xml", "644"]
+    ["target/release/gnats", "usr/libexec/local76/screensavers/gnats", "755"],
+    ["assets/local76-gnats.desktop", "usr/share/applications/local76-gnats.desktop", "644"],
+    ["assets/local76-gnats.xml", "usr/share/xscreensaver/config/local76-gnats.xml", "644"],
+    ["assets/local76-gnats.png", "usr/share/pixmaps/local76-gnats.png", "644"]
 ]
 
 [package.metadata.generate-rpm]
@@ -45,9 +46,10 @@ summary = "gnats - retro terminal screensaver effect"
 description = "Screensaver effect (gnats) part of the screensavers collection."
 license = "MIT"
 assets = [
-    { source = "target/release/gnats", dest = "/usr/libexec/screensaver-shims/gnats", mode = "755" },
-    { source = "assets/scene-gnats.desktop", dest = "/usr/share/applications/scene-gnats.desktop", mode = "644" },
-    { source = "assets/scene-gnats.xml", dest = "/usr/share/xscreensaver/config/scene-gnats.xml", mode = "644" }
+    { source = "target/release/gnats", dest = "/usr/libexec/local76/screensavers/gnats", mode = "755" },
+    { source = "assets/local76-gnats.desktop", dest = "/usr/share/applications/local76-gnats.desktop", mode = "644" },
+    { source = "assets/local76-gnats.xml", dest = "/usr/share/xscreensaver/config/local76-gnats.xml", mode = "644" },
+    { source = "assets/local76-gnats.png", dest = "/usr/share/pixmaps/local76-gnats.png", mode = "644" }
 ]
 [patch."https://github.com/local76/library.git"]
 library = { path = "../library" }

@@ -4,32 +4,37 @@
 
 mod types;
 mod physics;
+mod physics_helpers;
 mod render;
+mod render_helpers;
+mod update_helpers;
 
 pub use types::{Firefly, Attractor, Star, KillSpark};
 
-use library::core::{LcgRng, TerminalCell, hsl_to_rgb, rgb_to_hsl};
+use crate::runner::core::{LcgRng, TerminalCell, hsl_to_rgb, rgb_to_hsl};
 use std::time::Duration;
-use library::core::screensaver::Screensaver;
-use library::toolkit::sys_info::{query_current_palette, get_system_info};
+use crate::runner::core::screensaver::Screensaver;
+use crate::runner::toolkit::sys_info::{query_current_palette, get_system_info};
 
 pub struct Gnats {
-    rng: LcgRng,
+    pub(crate) rng: LcgRng,
     pub(crate) fireflies: Vec<Firefly>,
     pub(crate) attractors: Vec<Attractor>,
     pub(crate) stars: Vec<Star>,
     pub(crate) kill_sparks: Vec<KillSpark>,
     pub(crate) time_elapsed: f32,
-    last_cols: usize,
-    last_rows: usize,
+    pub(crate) last_cols: usize,
+    pub(crate) last_rows: usize,
     pub(crate) logo_excitation: Vec<f32>,
     pub(super) on_battery: bool,
     pub(super) frame_time_ema: f32,
     pub(super) quality_scale: f32,
     pub(super) target_frame_time: f32,
-    sys_refresh_timer: f32,
-    mem_pressure: f32,
-    cpu_load: f32,
+    pub(crate) sys_refresh_timer: f32,
+    pub(crate) mem_pressure: f32,
+    pub(crate) cpu_load: f32,
+    pub(crate) logo_text: String,
+    pub(crate) accent: (u8, u8, u8),
 }
 
 impl Default for Gnats {
@@ -43,6 +48,7 @@ impl Gnats {
         let rng = LcgRng::new(1357);
         let sys = get_system_info();
         let on_battery = sys.power_status.contains("Battery");
+        let accent = query_current_palette().accent;
         Self {
             rng,
             fireflies: Vec::new(),
@@ -60,46 +66,12 @@ impl Gnats {
             sys_refresh_timer: 0.0,
             mem_pressure: sys.mem_used_pct / 100.0,
             cpu_load: (sys.cpu_usage_pct / 100.0).clamp(0.0, 1.0),
+            logo_text: sys.logo_text,
+            accent,
         }
     }
 
-    fn spawn_new_firefly(&mut self, cols: usize, rows: usize) {
-        let size = self.rng.next_range(0.0, 4.0) as u8;
-        let speed_mult = self.rng.next_range(0.7, 1.3);
 
-        // library 4.0: pull from the canonical ScreenPalette.
-        let accent = query_current_palette().accent;
-        let (acc_h, _acc_s, _acc_l) = rgb_to_hsl(accent.0, accent.1, accent.2);
-        let p = self.rng.next_f32();
-        let h = if p < 0.4 {
-            (acc_h + self.rng.next_range(-15.0, 15.0)).rem_euclid(360.0)
-        } else if p < 0.7 {
-            (acc_h + 120.0 + self.rng.next_range(-15.0, 15.0)).rem_euclid(360.0)
-        } else {
-            (acc_h - 120.0 + self.rng.next_range(-15.0, 15.0)).rem_euclid(360.0)
-        };
-        let color = hsl_to_rgb(h, 0.95, 0.60);
-
-        // Spawn on the border of the screen to make it feel like they fly in
-        let side = self.rng.next_usize(4);
-        let (x, y) = match side {
-            0 => (0.0, self.rng.next_range(0.0, rows as f32)), // Left
-            1 => (cols as f32 - 1.0, self.rng.next_range(0.0, rows as f32)), // Right
-            2 => (self.rng.next_range(0.0, cols as f32), 0.0), // Top
-            _ => (self.rng.next_range(0.0, cols as f32), rows as f32 - 1.0), // Bottom
-        };
-
-        self.fireflies.push(Firefly {
-            x,
-            y,
-            vx: self.rng.next_range(-3.0, 3.0),
-            vy: self.rng.next_range(-3.0, 3.0),
-            color,
-            size,
-            speed_mult,
-            history: Vec::new(),
-        });
-    }
 }
 
 impl Screensaver for Gnats {
@@ -135,6 +107,8 @@ impl Screensaver for Gnats {
             self.mem_pressure = sys.mem_used_pct / 100.0;
             self.cpu_load = (sys.cpu_usage_pct / 100.0).clamp(0.0, 1.0);
             self.on_battery = sys.power_status.contains("Battery");
+            self.logo_text = sys.logo_text;
+            self.accent = query_current_palette().accent;
             self.sys_refresh_timer = 0.0;
         }
 
@@ -149,7 +123,7 @@ impl Screensaver for Gnats {
 
             // Recreate attractors
             self.attractors.clear();
-            let accent = query_current_palette().accent;
+            let accent = self.accent;
             let (acc_h, _acc_s, _acc_l) = rgb_to_hsl(accent.0, accent.1, accent.2);
             self.attractors.push(Attractor {
                 x: cols as f32 / 2.0,
@@ -178,32 +152,7 @@ impl Screensaver for Gnats {
             self.kill_sparks.clear();
         }
 
-        // Dynamically adjust fireflies to match target capacity
-        let num_fireflies = (((cols * rows) / 45).clamp(30, 60) as f32 * self.quality_scale * (if self.on_battery { 0.55 } else { 1.0 })) as usize;
-        if self.fireflies.len() > num_fireflies {
-            self.fireflies.truncate(num_fireflies);
-        } else if self.fireflies.len() < num_fireflies && num_fireflies > 0 {
-            while self.fireflies.len() < num_fireflies {
-                self.spawn_new_firefly(cols, rows);
-            }
-        }
-
-        // Dynamically adjust star population to match target capacity
-        let target_stars = (((cols * rows) / 25).clamp(30, 120) as f32 * self.quality_scale * (if self.on_battery { 0.55 } else { 1.0 })) as usize;
-        if self.stars.len() > target_stars {
-            self.stars.truncate(target_stars);
-        } else if self.stars.len() < target_stars && target_stars > 0 {
-            while self.stars.len() < target_stars {
-                let ch = if self.stars.len() % 8 == 0 { '✦' } else if self.stars.len() % 3 == 0 { '+' } else { '.' };
-                self.stars.push(Star {
-                    x: self.rng.next_f32(),
-                    y: self.rng.next_f32(),
-                    phase: self.rng.next_f32() * std::f32::consts::TAU,
-                    ch,
-                    excitation: 0.0,
-                });
-            }
-        }
+        self.adjust_populations(cols, rows);
 
         let cols_f = cols as f32;
         let rows_f = rows as f32;
@@ -262,31 +211,6 @@ impl Screensaver for Gnats {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_gnats_new() {
-        let gnats = Gnats::new();
-        assert_eq!(gnats.fireflies.len(), 0);
-        assert_eq!(gnats.attractors.len(), 0);
-        assert_eq!(gnats.stars.len(), 0);
-        assert_eq!(gnats.kill_sparks.len(), 0);
-        assert_eq!(gnats.time_elapsed, 0.0);
-    }
-
-    #[test]
-    fn test_gnats_update_and_draw() {
-        let mut gnats = Gnats::new();
-        gnats.update(Duration::from_millis(16), 80, 24);
-        let mut grid = vec![TerminalCell::default(); 80 * 24];
-        gnats.draw(&mut grid, 80, 24);
-        // Ensure state variables get initialized
-        assert_eq!(gnats.last_cols, 80);
-        assert_eq!(gnats.last_rows, 24);
-        assert!(!gnats.fireflies.is_empty());
-        assert!(!gnats.stars.is_empty());
-        assert!(!gnats.attractors.is_empty());
-    }
-}
+#[path = "mod_tests.rs"]
+mod tests;
 

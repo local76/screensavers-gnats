@@ -30,3 +30,32 @@ lto = true               # Enable Link Time Optimization
 codegen-units = 1        # Reduce codegen units to maximize size reduction
 panic = "abort"          # Remove panic unwinding code
 strip = true             # Strip symbols and debuginfo
+
+[package.metadata.deb]
+name = "scene-gnats"
+maintainer = "Screensavers Developer <dev@local76.org>"
+extended-description = "Screensaver effect (gnats) part of the screensavers collection."
+depends = "libc6, xterm"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/gnats", "usr/libexec/local76/screensavers/gnats", "755"],
+    ["assets/local76-gnats.desktop", "usr/share/applications/local76-gnats.desktop", "644"],
+    ["assets/local76-gnats.xml", "usr/share/xscreensaver/config/local76-gnats.xml", "644"],
+    ["assets/local76-gnats.png", "usr/share/pixmaps/local76-gnats.png", "644"]
+]
+
+[package.metadata.generate-rpm]
+name = "scene-gnats"
+version = "2026.6.10-1"
+release = "1"
+arch = "x86_64"
+summary = "gnats - retro terminal screensaver effect"
+description = "Screensaver effect (gnats) part of the screensavers collection."
+license = "MIT"
+assets = [
+    { source = "target/release/gnats", dest = "/usr/libexec/local76/screensavers/gnats", mode = "755" },
+    { source = "assets/local76-gnats.desktop", dest = "/usr/share/applications/local76-gnats.desktop", mode = "644" },
+    { source = "assets/local76-gnats.xml", dest = "/usr/share/xscreensaver/config/local76-gnats.xml", mode = "644" },
+    { source = "assets/local76-gnats.png", dest = "/usr/share/pixmaps/local76-gnats.png", mode = "644" }
+]
